@@ -1,0 +1,27 @@
+Increase NBD client block size to 4096
+
+Since Windows does 4K writes, it's probably more efficient to write to the
+image in 4K chunks instead of splitting the writes into 1K chunks.
+
+diff --git a/nbd.c b/nbd.c
+index edf0cf8..de1738f 100644
+--- a/nbd.c
++++ b/nbd.c
+@@ -320,7 +320,7 @@ static int nbd_receive_negotiate_oldstyle(int csock, off_t *size, size_t *blocks
+ 
+ 	magic = be64_to_cpup((uint64_t*)(buf + 8));
+ 	*size = be64_to_cpup((uint64_t*)(buf + 16));
+-	*blocksize = 1024;
++	*blocksize = 4096;
+ 
+ 	TRACE("Magic is %c%c%c%c%c%c%c%c",
+ 	      qemu_isprint(buf[0]) ? buf[0] : '.',
+@@ -420,7 +420,7 @@ static int fixed_newstyle_handshake(int sock, off_t *size, size_t *blocksize, co
+ 
+     TRACE("Performing fixed-newstyle handshake");
+ 
+-    *blocksize = 1024;
++    *blocksize = 4096;
+     check_and_return(expect(sock, buf, "NBDMAGIC"));
+     check_and_return(expect(sock, buf, "IHAVEOPT"));
+     check_and_return(read_all(sock, &handshake_flags, sizeof(handshake_flags)));

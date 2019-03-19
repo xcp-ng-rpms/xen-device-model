@@ -1,0 +1,23 @@
+# HG changeset patch
+# Parent 09834e541a3e891eda0c3367330548fbebcc258b
+
+diff --git a/hw/xen_machine_fv.c b/hw/xen_machine_fv.c
+index b385d6a..5789a71 100644
+--- a/hw/xen_machine_fv.c
++++ b/hw/xen_machine_fv.c
+@@ -158,6 +158,7 @@ uint8_t *qemu_map_cache(target_phys_addr_t phys_addr, uint8_t lock)
+ 
+     if (!test_bit(address_offset>>XC_PAGE_SHIFT, entry->valid_mapping)) {
+         last_address_page = ~0UL;
++        last_address_vaddr = NULL;
+         return NULL;
+     }
+ 
+@@ -200,6 +201,7 @@ void qemu_invalidate_entry(uint8_t *buffer)
+ 
+     if (last_address_page >> (MCACHE_BUCKET_SHIFT - XC_PAGE_SHIFT) == paddr_index) {
+         last_address_page =  ~0UL;
++        last_address_vaddr = NULL;
+     }
+ 
+     entry = &mapcache_entry[paddr_index % nr_buckets];

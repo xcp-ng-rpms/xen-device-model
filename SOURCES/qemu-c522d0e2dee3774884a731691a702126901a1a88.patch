@@ -1,0 +1,50 @@
+diff --git a/vnc.c b/vnc.c
+index 29fca74..2ce72f2 100644
+--- a/vnc.c
++++ b/vnc.c
+@@ -128,6 +128,7 @@ struct VncState
+     struct VncSurface server;  /* vnc server surface */
+     VncDisplay *vd;
+     int need_update;
++    int force_update;
+     uint32_t features;
+     int absolute;
+     int last_x;
+@@ -674,6 +675,12 @@ static void vnc_update_client(void *opaque)
+ 	int saved_offset;
+ 	int has_dirty = 0;
+ 
++        if (vs->output.offset && !vs->audio_cap && !vs->force_update) {
++            /* kernel send buffers are full -> drop frames to throttle */
++            qemu_mod_timer(vs->timer, qemu_get_clock(rt_clock) + VNC_REFRESH_INTERVAL);
++            return;
++        }
++
+         vga_hw_update();
+ 
+         /*
+@@ -710,7 +717,7 @@ static void vnc_update_client(void *opaque)
+             server_row += ds_get_linesize(vs->ds);
+         }
+ 
+-	if (!has_dirty && !vs->audio_cap) {
++        if (!has_dirty && !vs->audio_cap && !vs->force_update) {
+ 	    qemu_mod_timer(vs->timer, qemu_get_clock(rt_clock) + VNC_REFRESH_INTERVAL);
+ 	    return;
+ 	}
+@@ -754,6 +761,7 @@ static void vnc_update_client(void *opaque)
+ 	vs->output.buffer[saved_offset] = (n_rectangles >> 8) & 0xFF;
+ 	vs->output.buffer[saved_offset + 1] = n_rectangles & 0xFF;
+ 	vnc_flush(vs);
++        vs->force_update = 0;
+ 
+     }
+ 
+@@ -1283,6 +1291,7 @@ static void framebuffer_update_request(VncState *vs, int incremental,
+ 
+     int i;
+     vs->need_update = 1;
++    vs->force_update = 1;
+     if (!incremental) {
+ 	for (i = 0; i < h; i++) {
+             vnc_set_bits(vs->guest.dirty[y_position + i],

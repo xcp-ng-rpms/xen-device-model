@@ -1,0 +1,118 @@
+# HG changeset patch
+# Parent ab1e0817ce4f4d1934031017f80e2aabc902b18f
+
+[CP-3235] Allow Xen Platform PCI Device's Vendor ID, Device ID and Revision
+to be overriden using xenstore keys in platform.
+
+diff --git a/hw/xen_platform.c b/hw/xen_platform.c
+index a40f6bb..511c83d 100644
+--- a/hw/xen_platform.c
++++ b/hw/xen_platform.c
+@@ -569,21 +569,16 @@ void pci_xen_platform_init(PCIBus *bus)
+     d = (PCIXenPlatformState *)pci_register_device(
+         bus, "xen-platform", sizeof(PCIXenPlatformState), -1, NULL, NULL);
+     pch = (struct pci_config_header *)d->pci_dev.config;
+-    pch->vendor_id = 0x5853;
+-    pch->device_id = 0x0001;
++
++    xenstore_parse_pf_config(pch);
++
+     pch->command = 3; /* IO and memory access */
+-    pch->revision = 1;
+     pch->api = 0;
+     pch->subclass = 0x80; /* Other */
+     pch->class = 0xff; /* Unclassified device class */
+     pch->header_type = 0;
+     pch->interrupt_pin = 1;
+ 
+-    /* Microsoft WHQL requires non-zero subsystem IDs. */
+-    /* http://www.pcisig.com/reflector/msg02205.html.  */
+-    pch->subsystem_vendor_id = pch->vendor_id; /* Duplicate vendor id.  */
+-    pch->subsystem_id        = 0x0001;         /* Hardcode sub-id as 1. */
+-
+     pci_register_io_region(&d->pci_dev, 0, 0x100,
+                            PCI_ADDRESS_SPACE_IO, platform_ioport_map);
+ 
+diff --git a/qemu-xen.h b/qemu-xen.h
+index dcb8e9a..bc067c3 100644
+--- a/qemu-xen.h
++++ b/qemu-xen.h
+@@ -63,10 +63,12 @@ void handle_buffered_pio(void);
+ #endif
+ 
+ /* xenstore.c */
++struct pci_config_header;
+ void xenstore_init(void);
+ uint32_t xenstore_read_target(void);
+ void xenstore_parse_domain_config(int domid);
+ int xenstore_parse_disable_pf_config(void);
++void xenstore_parse_pf_config(struct pci_config_header *pch);
+ int xenstore_fd(void);
+ void xenstore_process_event(void *opaque);
+ void xenstore_record_dm(const char *subpath, const char *state);
+diff --git a/xenstore.c b/xenstore.c
+index 08f502b..9ff651f 100644
+--- a/xenstore.c
++++ b/xenstore.c
+@@ -792,6 +792,61 @@ int xenstore_parse_disable_pf_config ()
+     return disable_pf;
+ }
+ 
++void xenstore_parse_pf_config(struct pci_config_header *pch)
++{
++    char *node, *val;
++    unsigned int len;
++
++    /* See http://www.pcidatabase.com/vendor_details.php?id=1690 */
++    pch->vendor_id = 0x5853;
++    pch->subsystem_vendor_id = 0x5853;
++
++    /* Defaults */
++    pch->device_id = 0x0001;
++    pch->subsystem_id = 0x0001;
++    pch->revision = 1;
++
++    /* The presence of this key gates use of the others */
++    node = NULL;
++    if ( pasprintf(&node, "/local/domain/%u/platform/device_id", domid) >= 0 ) {
++        char *val;
++
++        if ( (val = xs_read(xsh, XBT_NULL, node, &len)) != NULL ) {
++            pch->device_id = strtoul(val, NULL, 0);
++            free(val);
++        }
++        free(node);
++        if ( val == NULL )
++            return;
++    }
++
++    pch->subsystem_id = pch->device_id;
++
++    node = NULL;
++    if ( pasprintf(&node, "/local/domain/%u/platform/subsystem_id", domid) >= 0 ) {
++        char *val;
++
++        if ( (val = xs_read(xsh, XBT_NULL, node, &len)) != NULL ) {
++            pch->subsystem_id = strtoul(val, NULL, 0);
++            free(val);
++        }
++        free(node);
++    }
++
++    pch->revision = 2;
++
++    node = NULL;
++    if ( pasprintf(&node, "/local/domain/%u/platform/revision", domid) >= 0 ) {
++        char *val;
++
++        if ( (val = xs_read(xsh, XBT_NULL, node, &len)) != NULL ) {
++            pch->revision = strtoul(val, NULL, 0);
++            free(val);
++        }
++        free(node);
++    }
++}
++
+ int xenstore_fd(void)
+ {
+     if (xsh)

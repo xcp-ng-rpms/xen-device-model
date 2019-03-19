@@ -1,0 +1,33 @@
+Remove support for PV qdisk
+
+From: Mark Syms <mark.syms@citrix.com>
+
+So it will not conflict with qemu-dp.
+
+Signed-off-by: Mark Syms <mark.syms@citrix.com>
+
+diff --git a/hw/xen_machine_pv.c b/hw/xen_machine_pv.c
+index e7283b0..e60d94e 100644
+--- a/hw/xen_machine_pv.c
++++ b/hw/xen_machine_pv.c
+@@ -45,7 +45,6 @@ static void xen_init_pv(ram_addr_t ram_size, int vga_ram_size,
+ 			const char *direct_pci)
+ {
+     CPUState *env;
+-    uint32_t domid_target;
+ 
+ #if defined(CONFIG_BLKTAP1) && !defined(CONFIG_STUBDOM) && !defined(__NetBSD__)
+     /* Initialize tapdisk client */
+@@ -71,12 +70,6 @@ static void xen_init_pv(ram_addr_t ram_size, int vga_ram_size,
+     xen_be_register("console", &xen_console_ops);
+     xen_be_register("vkbd", &xen_kbdmouse_ops);
+     xen_be_register("vfb", &xen_framebuffer_ops);
+-#ifndef CONFIG_STUBDOM
+-    xen_be_register("qdisk", &xen_blkdev_ops);
+-    domid_target = xenstore_read_target();
+-    if (domid_target)
+-        xenstore_scan("qdisk", domid_target, &xen_blkdev_ops);
+-#endif
+ 
+     /* setup framebuffer */
+     xen_init_display(xen_domid);

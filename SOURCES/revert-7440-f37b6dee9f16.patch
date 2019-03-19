@@ -1,0 +1,130 @@
+diff --git a/qemu-common.h b/qemu-common.h
+index 02d4cc4..50dfb6b 100644
+--- a/qemu-common.h
++++ b/qemu-common.h
+@@ -209,10 +209,4 @@ void qemu_iovec_from_buffer(QEMUIOVector *qiov, const void *buf, size_t count);
+ 
+ #endif /* dyngen-exec.h hack */
+ 
+-#include "qemu_socket.h"
+-
+-void xenstore_write_vncinfo(int port,
+-                            const struct sockaddr *addr,
+-                            socklen_t addrlen,
+-                            const char *password);
+ #endif
+diff --git a/qemu-xen.h b/qemu-xen.h
+index 0598668..a4ac6a4 100644
+--- a/qemu-xen.h
++++ b/qemu-xen.h
+@@ -71,6 +71,7 @@ void xenstore_process_event(void *opaque);
+ void xenstore_record_dm(const char *subpath, const char *state);
+ void xenstore_record_dm_state(const char *state);
+ void xenstore_check_new_media_present(int timeout);
++void xenstore_write_vncport(int vnc_display);
+ void xenstore_read_vncpasswd(int domid, char *pwbuf, size_t pwbuflen);
+ void xenstore_write_vslots(char *vslots);
+ 
+diff --git a/vl.c b/vl.c
+index d148a29..478ec0d 100644
+--- a/vl.c
++++ b/vl.c
+@@ -6012,6 +6012,7 @@ int main(int argc, char **argv, char **envp)
+                     vnc_display_port = vnc_display_open(ds, vnc_display, vncunused);
+ 		    if (vnc_display_port < 0)
+                         exit(1);
++		    xenstore_write_vncport(vnc_display_port);
+                 }
+ #if defined(CONFIG_SDL)
+                 if (sdl || !vnc_display)
+diff --git a/vnc.c b/vnc.c
+index b90d760..702ee5d 100644
+--- a/vnc.c
++++ b/vnc.c
+@@ -2747,9 +2747,6 @@ int vnc_display_open(DisplayState *ds, const char *display, int find_unused)
+ 	return -1;
+     }
+ 
+-    xenstore_write_vncinfo(ntohs(iaddr.sin_port), addr, addrlen,
+-                           vs->password);
+-
+     if (qemu_set_fd_handler2(vs->lsock, vnc_listen_poll, vnc_listen_read, NULL, vs) < 0)
+ 	return -1;
+ 
+diff --git a/xenstore.c b/xenstore.c
+index b0d6f77..c79aa3b 100644
+--- a/xenstore.c
++++ b/xenstore.c
+@@ -1196,55 +1196,33 @@ void xenstore_process_event(void *opaque)
+     free(vec);
+ }
+ 
+-static void xenstore_write_domain_console_item
+-    (const char *item, const char *val)
++void xenstore_write_vncport(int display)
+ {
+-    char *dompath;
+-    char *path = NULL;
++    char *buf = NULL, *path;
++    char *portstr = NULL;
+ 
+     if (xsh == NULL)
+         return;
+ 
+-    dompath = xs_get_domain_path(xsh, domid);
+-    if (dompath == NULL) goto out_err;
++    path = xs_get_domain_path(xsh, domid);
++    if (path == NULL) {
++        fprintf(logfile, "xs_get_domain_path() error\n");
++        goto out;
++    }
++
++    if (pasprintf(&buf, "%s/console/vnc-port", path) == -1)
++        goto out;
+ 
+-    if (pasprintf(&path, "%s/console/%s", dompath, item) == -1) goto out_err;
++    if (pasprintf(&portstr, "%d", display) == -1)
++        goto out;
+ 
+-    if (xs_write(xsh, XBT_NULL, path, val, strlen(val)) == 0)
+-        goto out_err;
++    if (xs_write(xsh, XBT_NULL, buf, portstr, strlen(portstr)) == 0)
++        fprintf(logfile, "xs_write() vncport failed\n");
+ 
+  out:
+     free(path);
+-    return;
+-
+- out_err:
+-    fprintf(logfile, "write console item %s (%s) failed\n", item, path);
+-    goto out;
+-}
+-
+-void xenstore_write_vncinfo(int port,
+-                            const struct sockaddr *addr,
+-                            socklen_t addrlen,
+-                            const char *password)
+-{
+-    char *portstr = NULL;
+-    const char *addrstr;
+-
+-    if (pasprintf(&portstr, "%d", port) != -1) {
+-        xenstore_write_domain_console_item("vnc-port", portstr);
+-        free(portstr);
+-    }
+-
+-    assert(addr->sa_family == AF_INET); 
+-    addrstr = inet_ntoa(((const struct sockaddr_in*)addr)->sin_addr);
+-    if (!addrstr) {
+-        fprintf(logfile, "inet_ntop on vnc-addr failed\n");
+-    } else {
+-        xenstore_write_domain_console_item("vnc-listen", addrstr);
+-    }
+-
+-    if (password)
+-        xenstore_write_domain_console_item("vnc-pass", password);
++    free(portstr);
++    free(buf);
+ }
+ 
+ void xenstore_write_vslots(char *vslots)

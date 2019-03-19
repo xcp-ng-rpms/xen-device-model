@@ -1,0 +1,136 @@
+diff --git a/hw/pass-through.c b/hw/pass-through.c
+index b20d30f..7a6be3b 100644
+--- a/hw/pass-through.c
++++ b/hw/pass-through.c
+@@ -118,6 +118,11 @@ struct dpci_infos {
+ char mapped_machine_irq[PT_NR_IRQS] = {0};
+ 
+ /* prototype */
++static int pt_cmd_word_reg_read(struct pt_dev *ptdev,
++        struct pt_reg_tbl *cfg_entry,
++        uint16_t *value, uint16_t valid_mask);
++static uint32_t pt_command_reg_init(struct pt_dev *ptdev,
++    struct pt_reg_info_tbl *reg, uint32_t real_offset);
+ static uint32_t pt_common_reg_init(struct pt_dev *ptdev,
+     struct pt_reg_info_tbl *reg, uint32_t real_offset);
+ static uint32_t pt_vendor_reg_init(struct pt_dev *ptdev,
+@@ -252,6 +257,9 @@ static int pt_vga_pci_subclass_write(struct pt_dev *ptdev,
+         struct pt_reg_tbl *cfg_entry,
+         uint16_t *value, uint16_t dev_value, uint16_t valid_mask);
+ 
++int _pt_iomem_helper(struct pt_dev *assigned_device, int i,
++                     unsigned long e_base, unsigned long e_size, int op);
++
+ /* pt_reg_info_tbl declaration
+  * - only for emulated register (either a part or whole bit).
+  * - for passthrough register that need special behavior (like interacting with
+@@ -292,8 +300,8 @@ static struct pt_reg_info_tbl pt_emu_reg_header0_tbl[] = {
+         .init_val   = 0x0000,
+         .res_mask   = 0xF880,
+         .emu_mask   = 0x0743,
+-        .init       = pt_common_reg_init,
+-        .u.w.read   = pt_word_reg_read,
++        .init       = pt_command_reg_init,
++        .u.w.read   = pt_cmd_word_reg_read,
+         .u.w.write  = pt_cmd_reg_write,
+         .u.w.restore  = pt_cmd_reg_restore,
+     },
+@@ -1247,8 +1255,8 @@ static int wrapped_xc_domain_memory_mapping(
+ 
+ #define xc_domain_memory_mapping wrapped_xc_domain_memory_mapping
+ 
+-static int _pt_iomem_helper(struct pt_dev *assigned_device, int i,
+-                            unsigned long e_base, unsigned long e_size, int op)
++int _pt_iomem_helper(struct pt_dev *assigned_device, int i,
++                     unsigned long e_base, unsigned long e_size, int op)
+ {
+     if ( has_msix_mapping(assigned_device, i) )
+     {
+@@ -1850,7 +1858,7 @@ out:
+     {
+         assigned_device->permissive_warned = 1;
+         PT_LOG("Write-back to unknown field 0x%02x (partially) inhibited (0x%0*x)\n",
+-               addr, len * 2, wb_mask);
++               address, len * 2, wb_mask);
+         PT_LOG("If device %02x:%02x.%o doesn't work, try enabling permissive\n",
+                pci_bus_num(d->bus), PCI_SLOT(d->devfn), PCI_FUNC(d->devfn));
+         PT_LOG("mode (unsafe) and if it helps report the problem to xen-devel\n");
+@@ -2989,6 +2997,32 @@ static void pt_config_delete(struct pt_dev *ptdev)
+     }
+ }
+ 
++/* initialize command register value */
++/*
++ * Special initialization for Tonga VF.
++ * Fake the I/O bit to ON for the guest
++ * Note: Windows needs this bit in order to call StartDevice()
++ *
++ * NOTE: Should also confirm that this is a VF!!! (TBD)
++ *
++ */
++static uint32_t pt_command_reg_init(struct pt_dev *ptdev,
++        struct pt_reg_info_tbl *reg, uint32_t real_offset)
++{
++    if ((ptdev->pci_dev->vendor_id == PCI_VENDOR_ID_AMD ||
++         ptdev->pci_dev->vendor_id == PCI_VENDOR_ID_ATI) &&
++ 	 ptdev->is_virtfn)
++    {
++        PT_LOG ("Modify the initial PCI CMD reg from 0x%02x to 0x%02x\n", 
++            reg->init_val, reg->init_val | 0x01);
++        return reg->init_val | 0x01;
++    }
++    else
++    {
++        return reg->init_val;
++    }
++}
++
+ /* initialize common register value */
+ static uint32_t pt_common_reg_init(struct pt_dev *ptdev,
+         struct pt_reg_info_tbl *reg, uint32_t real_offset)
+@@ -3572,6 +3606,33 @@ static int pt_byte_reg_read(struct pt_dev *ptdev,
+ }
+ 
+ /* read word size emulate register */
++static int pt_cmd_word_reg_read(struct pt_dev *ptdev,
++        struct pt_reg_tbl *cfg_entry,
++        uint16_t *value, uint16_t valid_mask)
++{
++    struct pt_reg_info_tbl *reg = cfg_entry->reg;
++    uint16_t valid_emu_mask = 0;
++
++    /* emulate word register */
++    valid_emu_mask = reg->emu_mask & valid_mask;
++    *value = PT_MERGE_VALUE(*value, cfg_entry->data, ~valid_emu_mask);
++
++    if ((ptdev->pci_dev->vendor_id == PCI_VENDOR_ID_AMD ||
++         ptdev->pci_dev->vendor_id == PCI_VENDOR_ID_ATI) &&
++        (ptdev->pci_dev->device_class == PCI_CLASS_DISPLAY_OTHER ||
++         ptdev->pci_dev->device_class == PCI_CLASS_DISPLAY_VGA))
++    {
++        if (!(*value & 0x01))
++        {
++             PT_LOG ("WARNING!!! I/O bit for AMD/ATI display device is NOT set.  Fixing this now...\n");
++             *value |= 0x01;
++        }
++    }
++	
++
++    return 0;
++}
++
+ static int pt_word_reg_read(struct pt_dev *ptdev,
+         struct pt_reg_tbl *cfg_entry,
+         uint16_t *value, uint16_t valid_mask)
+diff --git a/hw/pci.h b/hw/pci.h
+index d3c252c..f79443c 100644
+--- a/hw/pci.h
++++ b/hw/pci.h
+@@ -57,6 +57,7 @@ extern target_phys_addr_t pci_mem_base;
+ #define PCI_VENDOR_ID_IBM                0x1014
+ #define PCI_DEVICE_ID_IBM_OPENPIC2       0xffff
+ 
++#define PCI_VENDOR_ID_ATI                0x1002
+ #define PCI_VENDOR_ID_AMD                0x1022
+ #define PCI_DEVICE_ID_AMD_LANCE          0x2000
+ 

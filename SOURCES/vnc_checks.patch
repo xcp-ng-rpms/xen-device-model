@@ -1,0 +1,24 @@
+# HG changeset patch
+# Parent 040433fa4495f30ebe013e9ff80981fa9ff53670
+
+diff --git a/console.c b/console.c
+index 9984d6f..09d9a62 100644
+--- a/console.c
++++ b/console.c
+@@ -884,13 +884,15 @@ static void console_putchar(TextConsole *s, int ch)
+         break;
+     case TTY_STATE_CSI: /* handle escape sequence parameters */
+         if (ch >= '0' && ch <= '9') {
+-            if (s->nb_esc_params < MAX_ESC_PARAMS) {
++            if (s->nb_esc_params < MAX_ESC_PARAMS && s->esc_params[s->nb_esc_params] < 10000) {
+                 s->esc_params[s->nb_esc_params] =
+                     s->esc_params[s->nb_esc_params] * 10 + ch - '0';
+             }
+         } else {
+             if (s->nb_esc_params < MAX_ESC_PARAMS)
+                 s->nb_esc_params++;
++            if (s->nb_esc_params < MAX_ESC_PARAMS)
++                s->esc_params[s->nb_esc_params] = 0;
+             if (ch == ';')
+                 break;
+ #ifdef DEBUG_CONSOLE
