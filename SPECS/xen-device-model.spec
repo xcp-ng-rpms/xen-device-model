@@ -1,7 +1,7 @@
 Summary: qemu-dm device model
 Name: xen-device-model
 Version: 0.10.2.xs
-Release: 3.0.1
+Release: 3.0.4
 License: GPL
 Source0: https://code.citrite.net/rest/archive/latest/projects/XSU/repos/qemu-trad/archive?at=8b4834ee1202852ed83a9fc61268c65fb6961ea7&prefix=%{name}-%{version}&format=tar.gz#/%{name}-%{version}.tar.gz
 Patch0: out-of-xen-build.patch
@@ -146,6 +146,7 @@ Patch138: Add-support-for-fixed-newstyle-nbd.patch
 Patch139: remove_support_for_pv_qdisk.patch
 Patch140: remove_support_for_qdisk_on_fv_machine.patch
 Patch141: increase_nbd_client_block_size_to_4096.patch
+Patch142: CP-28132_change_nbd_filename
 BuildRequires: zlib-devel, xen-libs-devel, xen-dom0-libs-devel, pciutils-devel, libpciaccess-devel, check-devel, libdrm-devel
 BuildRequires: ncurses-devel
 Requires(pre): shadow-utils
@@ -195,6 +196,12 @@ ln %{buildroot}%{_libexecdir}/xen/bin/qemu-dm %{buildroot}%{_libdir}/xen/bin/qem
 %dir /var/xen/qemu
 
 %changelog
+* Tue Jul 03 2018 Simon Rowe <simon.rowe@citrix.com> - 0.10.2.xs-3.0.4
+- CP-28132: skip :exportname=... from end of nbd filename
+
+* Mon Jun 25 2018 Simon Rowe <simon.rowe@citrix.com> - 0.10.2.xs-3.0.3
+- CA-290936: Fix vgpu migration by backporting shmem IPC used in QEMU (upstream) with vgpu.
+
 * Wed Mar 28 2018 Ross Lagerwall <ross.lagerwall@citrix.com> - 0.10.2.xs-3.0.1
 - CP-27303: Change QEMU vGPU communication with DEMU to UNIX fifo
 

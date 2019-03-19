@@ -1,0 +1,32 @@
+diff --git a/block-nbd.c b/block-nbd.c
+index b7c7b5dc..b8bc6154 100644
+--- a/block-nbd.c
++++ b/block-nbd.c
+@@ -33,6 +33,7 @@
+ 
+ #include <sys/types.h>
+ #include <unistd.h>
++#include <string.h>
+ 
+ typedef struct BDRVNBDState {
+     int sock;
+@@ -45,6 +46,7 @@ static int nbd_open(BlockDriverState *bs, const char* filename, int flags)
+     BDRVNBDState *s = bs->opaque;
+     const char *host;
+     const char *unixpath;
++    char *chr;
+     int sock;
+     off_t size;
+     size_t blocksize;
+@@ -61,6 +63,11 @@ static int nbd_open(BlockDriverState *bs, const char* filename, int flags)
+         if (unixpath[0] != '/')
+             return -EINVAL;
+ 
++        /* Chop off :exportname=... from the end, we'll hardcode it */
++        chr = strrchr(unixpath, ':');
++        if (chr)
++            *chr = '\0';
++
+         sock = unix_socket_outgoing(unixpath);
+ 
+     } else {

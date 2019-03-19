@@ -1,5 +1,5 @@
 diff --git a/hw/vgpu_fb.c b/hw/vgpu_fb.c
-index b9e8fca..995ec4f 100644
+index 42cce8b..238b7df 100644
 --- a/hw/vgpu_fb.c
 +++ b/hw/vgpu_fb.c
 @@ -13,6 +13,7 @@
@@ -10,24 +10,96 @@ index b9e8fca..995ec4f 100644
  
  #pragma pack(1)
  
-@@ -213,6 +214,8 @@ vgpu_fb_init(void)
+@@ -23,6 +24,7 @@ typedef struct shared_surface {
+     uint32_t    height;
+     uint32_t    depth;
+     uint32_t    update;
++    uint64_t    vram_addr;
+ } shared_surface_t;
+ 
+ #pragma pack(0)
+@@ -44,7 +46,8 @@ typedef struct vgpu_fb_state {
+ } vgpu_fb_state;
+ 
+ #define DEMU_FIFO_PATH     "/var/xen/vgpu/%d/fifo"
+-#define DEMU_FIFO_TIMEOUT   (60 * 5)
++#define DEMU_FIFO_TIMEOUT  (60 * 5)
++#define DEMU_SURFACE_PATH  "/xen.vgpu.%d"
+ 
+ static bool out_of_time = false;
+ 
+@@ -116,6 +119,49 @@ unlink_and_exit:
+     return fd;
+ }
+ 
++static int open_surface_shm(shared_surface_t **shared)
++{
++    int rc = 0;
++    int shm_fd;
++    void *ptr;
++    char *sh_name;
++
++    if (asprintf(&sh_name, DEMU_SURFACE_PATH, domid) < 0)
++        return -errno;
++
++    /* open the shared memory segment */
++    shm_fd = shm_open(sh_name, O_RDONLY, 0666);
++    if (shm_fd < 0) {
++        rc = -errno;
++        fprintf(stderr, "shm_open error %s\n", strerror(-rc));
++        goto out;
++    }
++
++    /* now map the shared memory segment in the address space of the process */
++    ptr = mmap(0, sizeof(shared_surface_t), PROT_READ, MAP_SHARED, shm_fd, 0);
++    if (ptr == MAP_FAILED) {
++        rc = -errno;
++        fprintf(stderr, "mmap error %s\n", strerror(-rc));
++    } else {
++        *shared = ptr;
++    }
++
++    if (close(shm_fd)) {
++        if (!rc)
++            rc = -errno;
++        fprintf(stderr, "close error %s\n", strerror(errno));
++    }
++
++    if (shm_unlink(sh_name)) {
++        if (!rc)
++            rc = -errno;
++        fprintf(stderr, "shm_unlink error %s\n", strerror(errno));
++    }
++out:
++    free(sh_name);
++    return rc;
++}
++
+ static int create_demu_fifo(void)
+ {
+     char *buffer;
+@@ -212,7 +258,9 @@ vgpu_fb_init(void)
+     xen_pfn_t pfn[n];
      int i;
      vgpu_fb_state *s;
-     int fifo_fd;
+-    int fifo_fd;
++    int fifo_fd, rc;
 +    int defaulted = 0;
 +    uint64_t address;
  
      s = qemu_mallocz(sizeof(vgpu_fb_state));
      if (!s)
-@@ -231,14 +234,21 @@ vgpu_fb_init(void)
+@@ -230,20 +278,25 @@ vgpu_fb_init(void)
+         exit(1);
      }
-     fprintf(logfile,"Rendezvous successful\n");
  
-+    address = xenstore_parse_vgpu_address();
-+    if (address == ~0ULL) {
-+        address = SURFACE_RESERVED_ADDRESS;
-+        defaulted = 1;
++    rc = open_surface_shm(&s->shared);
++    if (rc) {
++        fprintf(stderr, "Failed to open shared surface.  %s", strerror(-rc));
++        exit(1);
 +    }
++
++    address = s->shared->vram_addr;
 +
      for (i = 0; i < n; i++)
 -        pfn[i] = (SURFACE_RESERVED_ADDRESS >> TARGET_PAGE_BITS) + i;
@@ -43,47 +115,9 @@ index b9e8fca..995ec4f 100644
          exit(1);
      }
  
-diff --git a/qemu-xen.h b/qemu-xen.h
-index 9b6b818..14cf220 100644
---- a/qemu-xen.h
-+++ b/qemu-xen.h
-@@ -68,6 +68,7 @@ void xenstore_init(void);
- uint32_t xenstore_read_target(void);
- void xenstore_parse_domain_config(int domid);
- int xenstore_parse_disable_pf_config(void);
-+uint64_t xenstore_parse_vgpu_address(void);
- struct pci_config_header;
- void xenstore_parse_pf_config(struct pci_config_header *pch);
- int xenstore_fd(void);
-diff --git a/xenstore.c b/xenstore.c
-index 7eb91cf..aa11c16 100644
---- a/xenstore.c
-+++ b/xenstore.c
-@@ -911,6 +911,27 @@ void xenstore_parse_domain_config(int hvm_domid)
-     return;
+-    s->shared = (shared_surface_t *)(s->surface_buffer +
+-                                     SURFACE_RESERVED_SIZE -
+-                                     TARGET_PAGE_SIZE);
+-
+     s->surface_fd = fifo_fd;
  }
- 
-+uint64_t xenstore_parse_vgpu_address()
-+{
-+    char *params = NULL, *buf = NULL;
-+    uint64_t address = ~0ULL;
-+    unsigned int len;
-+
-+    if (pasprintf(&buf, "/local/domain/%u/vm-data/vram",domid) == -1) {
-+        goto out;
-+    }
-+
-+    params = xs_read(xsh, XBT_NULL, buf, &len);
-+    if (params != NULL) {
-+        address = strtoull(params, NULL, 16);
-+    }
-+
-+ out:
-+    free(buf);
-+    free(params);
-+    return address;
-+}
-+
- int xenstore_parse_disable_pf_config ()
- {
-     char *params = NULL, *buf = NULL;
