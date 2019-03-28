@@ -149,6 +149,7 @@ Patch141: increase_nbd_client_block_size_to_4096.patch
 Patch142: CP-28132_change_nbd_filename
 BuildRequires: zlib-devel, xen-libs-devel, xen-dom0-libs-devel, pciutils-devel, libpciaccess-devel, check-devel, libdrm-devel
 BuildRequires: ncurses-devel
+BuildRequires: gcc
 Requires(pre): shadow-utils
 Requires: libdrm
 Provides: qemu-xen(syslog) = 1
