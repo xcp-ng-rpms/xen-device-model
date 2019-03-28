@@ -1,7 +1,7 @@
 Summary: qemu-dm device model
 Name: xen-device-model
 Version: 0.10.2.xs
-Release: 3.0.4
+Release: 3.0.4%{dist}
 License: GPL
 Source0: https://code.citrite.net/rest/archive/latest/projects/XSU/repos/qemu-trad/archive?at=8b4834ee1202852ed83a9fc61268c65fb6961ea7&prefix=%{name}-%{version}&format=tar.gz#/%{name}-%{version}.tar.gz
 Patch0: out-of-xen-build.patch
